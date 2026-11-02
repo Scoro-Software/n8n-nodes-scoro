@@ -1,0 +1,33 @@
+{
+	"name": "Scoro: list projects",
+	"nodes": [
+		{
+			"parameters": {},
+			"id": "4c1f6a7e-0c3b-4d71-9f1a-1e4a5b6c7d81",
+			"name": "When clicking 'Execute workflow'",
+			"type": "n8n-nodes-base.manualTrigger",
+			"typeVersion": 1,
+			"position": [0, 0]
+		},
+		{
+			"parameters": {
+				"url": "https://yoursite.scoro.com/api/v4/projects?perPage=50",
+				"authentication": "predefinedCredentialType",
+				"nodeCredentialType": "scoroOAuth2Api",
+				"options": {}
+			},
+			"id": "8d2e9b3a-5f6c-4a1d-8e7f-2b3c4d5e6f90",
+			"name": "List projects",
+			"type": "n8n-nodes-base.httpRequest",
+			"typeVersion": 4.2,
+			"position": [240, 0]
+		}
+	],
+	"connections": {
+		"When clicking 'Execute workflow'": {
+			"main": [[{ "node": "List projects", "type": "main", "index": 0 }]]
+		}
+	},
+	"settings": { "executionOrder": "v1" },
+	"meta": { "templateCredsSetupCompleted": false }
+}

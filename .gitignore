@@ -147,3 +147,11 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# IDE
+.idea/
+
+# Local testing (testing/)
+testing/.env
+testing/pkg/
+testing/evidence/

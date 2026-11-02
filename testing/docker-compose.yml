@@ -1,0 +1,49 @@
+# Local n8n with the Scoro community node installed from the packed tarball.
+#
+#   ./testing/setup.sh          build, pack and start (or restart) n8n on http://localhost:5678
+#   docker compose -f testing/docker-compose.yml logs -f
+#   docker compose -f testing/docker-compose.yml down        (add -v to wipe n8n data)
+#
+# The package is installed into /home/node/.n8n/nodes on every start, which is the
+# same path n8n uses for community nodes installed from the nodes panel, so the node
+# types are registered under their real name (@scoro/n8n-nodes-scoro.scoro).
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_IMAGE_TAG:-latest}
+    container_name: n8n-scoro-test
+    ports:
+      - '5678:5678'
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      - N8N_SECURE_COOKIE=false
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+      - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+      - N8N_LOG_LEVEL=${N8N_LOG_LEVEL:-info}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-Europe/Tallinn}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./pkg:/pkg:ro
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        set -e
+        mkdir -p /home/node/.n8n/nodes && cd /home/node/.n8n/nodes
+        [ -f package.json ] || printf '{"name":"installed-nodes","private":true}\n' > package.json
+        rm -rf node_modules/@scoro
+        npm install --no-audit --no-fund --no-package-lock --legacy-peer-deps --omit=dev --omit=optional /pkg/package.tgz
+        echo "Installed: $(node -e "console.log(require('/home/node/.n8n/nodes/node_modules/@scoro/n8n-nodes-scoro/package.json').version)")"
+        exec n8n start
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:5678/healthz || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  n8n_data:
