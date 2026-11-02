@@ -1,0 +1,39 @@
+{
+	"name": "Scoro: fetch the record yourself",
+	"nodes": [
+		{
+			"parameters": {
+				"module": "projects",
+				"action": "modify",
+				"returnFullRecord": false,
+				"options": {}
+			},
+			"id": "c3d4e5f6-3333-4071-8bcd-2e3f4a5b6c73",
+			"name": "Scoro Trigger",
+			"type": "@scoro/n8n-nodes-scoro.scoroTrigger",
+			"typeVersion": 1,
+			"position": [0, 0],
+			"webhookId": "0a1b2c3d-4e5f-4607-8899-aabbccddeef0"
+		},
+		{
+			"parameters": {
+				"url": "=https://yoursite.scoro.com/api/v4/projects/{{ $json.entityId }}",
+				"authentication": "predefinedCredentialType",
+				"nodeCredentialType": "scoroOAuth2Api",
+				"options": {}
+			},
+			"id": "d4e5f6a7-4444-4182-9cde-3f4a5b6c7d84",
+			"name": "Get project (API v4)",
+			"type": "n8n-nodes-base.httpRequest",
+			"typeVersion": 4.2,
+			"position": [240, 0]
+		}
+	],
+	"connections": {
+		"Scoro Trigger": {
+			"main": [[{ "node": "Get project (API v4)", "type": "main", "index": 0 }]]
+		}
+	},
+	"settings": { "executionOrder": "v1" },
+	"meta": { "templateCredsSetupCompleted": false }
+}
