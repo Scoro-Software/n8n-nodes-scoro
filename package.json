@@ -1,6 +1,6 @@
 {
   "name": "@scoro/n8n-nodes-scoro",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "n8n community node for Scoro: a Scoro OAuth2 API credential for the HTTP Request node and a Scoro Trigger for webhook events (API v4)",
   "license": "MIT",
   "homepage": "https://github.com/Scoro-Software/n8n-nodes-scoro#readme",
