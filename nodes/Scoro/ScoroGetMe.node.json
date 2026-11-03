@@ -1,0 +1,18 @@
+{
+	"node": "@scoro/n8n-nodes-scoro",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Productivity", "Sales", "Finance & Accounting"],
+	"resources": {
+		"credentialDocumentation": [
+			{
+				"url": "https://github.com/Scoro-Software/n8n-nodes-scoro#credentials"
+			}
+		],
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/Scoro-Software/n8n-nodes-scoro#scoro-get-me"
+			}
+		]
+	}
+}

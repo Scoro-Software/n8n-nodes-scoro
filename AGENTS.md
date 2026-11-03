@@ -1,15 +1,25 @@
 # Working on @scoro/n8n-nodes-scoro
 
-This repository is an n8n community package for Scoro. It ships exactly two things and should stay
+This repository is an n8n community package for Scoro. It ships exactly three things and should stay
 that small:
 
 - `credentials/ScoroOAuth2Api.credentials.ts`: the **Scoro OAuth2 API** credential. Users call the
   Scoro API v4 through n8n's HTTP Request node with this credential (Predefined Credential Type).
-- `nodes/Scoro/ScoroTrigger.node.ts`: the **Scoro Trigger** node (programmatic style), backed by
-  Scoro webhooks. Shared request and error-mapping helpers live in `nodes/Scoro/shared/transport.ts`.
+- `nodes/Scoro/ScoroGetMe.node.ts`: the **Scoro Get Me** node, `GET /api/v4/users/me`.
+- `nodes/Scoro/ScoroCallEli.node.ts`: the **Scoro Call Eli** node, `POST /api/v4/ai/messages`.
+  Eli is the Scoro AI agent; describe it as able to do pretty much anything in the Scoro
+  environment that the connected user could do (answer, look up, reason, carry out work), not as a
+  read-only assistant.
 
-There is no action node on purpose. Do not add one, and do not add a hard-coded list of Scoro
-modules or endpoints: the trigger takes the module as free text and derives API paths by convention.
+Shared request and error-mapping helpers live in `nodes/Scoro/shared/transport.ts`. Both nodes are
+programmatic (`execute()`), run once per input item, support Continue On Fail, and are usable as AI
+tools.
+
+There is no node with a list of Scoro operations on purpose, and no trigger (the Scoro Trigger that
+shipped up to 0.3.0 was removed by maintainer decision in November 2026). Do not add either; the HTTP
+Request node covers the rest of the API. n8n refuses a package without nodes (installer error
+"The specified package does not contain any nodes", lint error on an empty `n8n.nodes`), which is why
+the two small nodes exist.
 
 ## Rules that n8n verification enforces
 
@@ -20,11 +30,13 @@ modules or endpoints: the trigger takes the module as free text and derives API 
 - `npm run lint` must pass in strict (n8n Cloud) mode. Do not edit `eslint.config.mjs`; the lint
   verifies it is unchanged. Lint rules cover Title Case display names, sentence-case descriptions
   without a trailing period, "Whether …" for booleans, alphabetised options, `e.g.` placeholders,
-  and `{ light, dark }` SVG icons.
+  `{ light, dark }` SVG icons, `usableAsTool` and `subtitle` on every node, `pairedItem` on every
+  output item, and no bare `throw error` of a catch parameter (wrap in `NodeOperationError`).
 - The credential's Scope field is user-editable. n8n drops a user-edited `scope` on credentials that
-  extend `oAuth2Api` and re-applies the type's default, so the hidden `scope` property's default is
-  the expression `={{ $self["scopes"] }}` reading the visible field. Default scope names come from
-  the `security` entries of the Scoro API v4 schema (<https://api.scoro.com/api/v4/reference/openapi>).
+  extend `oAuth2Api` and re-applies the type's default (n8n 1.x and 2.0 always; 2.45 only when the
+  `scope` property is hidden), so the hidden `scope` property's default is the expression
+  `={{ $self["scopes"] }}` reading the visible field. Default scope names come from the `security`
+  entries of the Scoro API v4 schema (<https://api.scoro.com/api/v4/reference/openapi>).
 
 ## Commands
 
@@ -32,13 +44,13 @@ modules or endpoints: the trigger takes the module as free text and derives API 
 |---|---|
 | Lint / fix | `npm run lint`, `npm run lint:fix` |
 | Build | `npm run build` (compiles to `dist/`; copies every `*.svg`/`*.png` in the tree, so keep binaries out of the source folders) |
-| Trigger handler checks | `node testing/scripts/trigger-harness.mjs` |
+| Node checks with a stub context | `node testing/scripts/nodes-harness.mjs` (after a build) |
 | Real n8n with the package installed | `./testing/setup.sh` (Docker, see `testing/README.md`) |
 | What would be published | `npm pack --dry-run` |
 | Release | `npm run release` from `main`, see `docs/RELEASING.md`; publishing happens only in GitHub Actions |
 
 Run lint, build and the harness before committing. Commits follow the conventional format
-(`feat(trigger): …`, `fix(credentials): …`, `docs(readme): …`).
+(`feat(nodes): …`, `fix(credentials): …`, `docs(readme): …`).
 
 ## Facts about Scoro that shape the code
 
@@ -46,10 +58,13 @@ Run lint, build and the harness before committing. Commits follow the convention
   comes from the credential's Site URL and can be on scoro.com, scoro.ee, scoro.lv or scoro.lt.
   Developer Portal apps use authorization code with PKCE and always have a client secret; the
   credential uses n8n's `pkce` grant type with client ID and secret, sending them in the body.
-- Webhooks: `POST/GET /api/v4/webhooks`, `DELETE /api/v4/webhooks/{id}`. Scoro probes the URL
-  with a HEAD request before delivering, delivers only to public allow-listed hosts (never
-  localhost), does not sign payloads, does not retry, and stores the `any` action as `null`.
-  Deliveries carry `entityId`, `entityType`, `actorId` and a legacy snake_case `entity` snapshot.
+- `GET /users/me` needs `base:r`, which every token has. It returns the `accounts` identifiers used
+  by the `Scoro-Company-Account` header, which `transport.ts` adds when the credential names one.
+- `POST /ai/messages` needs `ai:rw`, takes `{ message, threadId? }`, answers synchronously ("can
+  take a minute or more", so the node sets a 300 s timeout) with `{ threadId, messageId, response,
+  createdDateTime, isNewThread }`, and documents `403` (assistant not enabled), `409` (same question
+  already being answered, do not retry), `502` and `504` (stored in the thread, ask again there).
+  `GET /ai/threads` lists conversations.
 - Lists are bare arrays paged with `page` (from 1) and `perPage` (max 100).
 - Error bodies are `{ error, statusCode, message[] }`; the gateway answers missing scopes with
   `403 { error: "insufficient_scope", required_scope }`.

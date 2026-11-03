@@ -6,7 +6,7 @@
 #
 # The package is installed into /home/node/.n8n/nodes on every start, which is the
 # same path n8n uses for community nodes installed from the nodes panel, so the node
-# types are registered under their real name (@scoro/n8n-nodes-scoro.scoro).
+# types are registered under their real names (@scoro/n8n-nodes-scoro.scoroGetMe, .scoroCallEli).
 services:
   n8n:
     image: docker.n8n.io/n8nio/n8n:${N8N_IMAGE_TAG:-latest}

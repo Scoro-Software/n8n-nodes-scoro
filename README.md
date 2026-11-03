@@ -2,23 +2,28 @@
 
 The official [n8n](https://n8n.io/) community package for the [Scoro](https://www.scoro.com) API v4.
 
-It adds two things to n8n:
+It adds three things to n8n:
 
 - **Scoro OAuth2 API** credential. Connect once with OAuth2, then call any Scoro API v4 endpoint from
   n8n's HTTP Request node (Authentication: *Predefined Credential Type*). n8n attaches the token and
   refreshes it with the refresh token, as it does for its built-in OAuth2 credentials.
-- **Scoro Trigger** node. Starts a workflow when a record is created, modified or deleted in Scoro,
-  using Scoro webhooks.
+- **Scoro Get Me** node. Returns the user the credential is connected as, with the company accounts,
+  permissions and site settings a workflow needs before calling other endpoints.
+- **Scoro Call Eli** node. Sends a message to Eli, the Scoro AI agent, and returns its answer. Eli
+  can do pretty much anything in your Scoro environment that you could do yourself: answer
+  questions, look up and reason over data across modules, and carry out work on your behalf.
+  Conversations can be continued across calls.
 
-There is deliberately no action node with a fixed list of operations: the credential plus the HTTP
-Request node covers the whole API without the package having to track every endpoint.
+There is deliberately no node with a fixed list of operations: the credential plus the HTTP Request
+node covers the whole API without the package having to track every endpoint.
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/sustainable-use-license/) workflow automation platform.
 
 [Installation](#installation)
 [Credentials](#credentials)
 [Calling the API](#calling-the-api)
-[Scoro Trigger](#scoro-trigger)
+[Scoro Get Me](#scoro-get-me)
+[Scoro Call Eli](#scoro-call-eli)
 [Example workflows](#example-workflows)
 [Compatibility](#compatibility)
 [Resources](#resources)
@@ -65,7 +70,7 @@ The package authenticates with OAuth2 against your own Scoro site. You need an a
    - **Site URL**: the address of your site, `https://mycompany.scoro.com` or
      `https://mycompany.scoro.ee`. Only the host is used.
    - **Company Account** (optional): on a site with several company accounts, the identifier of the
-     account to work in. The identifiers are listed under `accounts` in `GET /api/v4/users/me`.
+     account to work in. The identifiers are listed under `accounts` in the output of Scoro Get Me.
 7. Click **Connect my account**, sign in to Scoro and approve the scopes.
 
 ### Scopes
@@ -74,19 +79,17 @@ The credential has an editable **Scope** field (space-separated). Its default co
 can do out of the box:
 
 ```
-offline_access
+offline_access ai:rw
 projects:rwd tasks:rwd contacts:rwd quotes:rwd orders:rwd invoices:rwd products:rwd
-webhooks:rwd
 bills:r bookings:r calendar:r expenses:r prepayments:r purchase-orders:r time-offs:r
 ```
 
-Read/write/delete on the core resources makes the credential useful from the HTTP Request node,
-`webhooks:rwd` is needed by the trigger, and the read scopes let the trigger fetch records of the
-remaining modules. Trim or extend the list to what your workflows need; scope names are the ones the
-[API reference](https://api.scoro.com/api/v4/reference) lists per operation (`resource:r`, `:rw`,
-`:rwd`). Keep `offline_access`, otherwise no refresh token is issued. `base:r` (reference data such
-as statuses and `/users/me`) is granted automatically. `contacts:*` covers companies and persons;
-`tasks:*` covers time entries.
+`ai:rw` is needed by Scoro Call Eli, read/write/delete on the core resources makes the credential
+useful from the HTTP Request node, and the read scopes cover the remaining modules. Scoro Get Me only
+needs `base:r`, which is granted automatically. Trim or extend the list to what your workflows need;
+scope names are the ones the [API reference](https://api.scoro.com/api/v4/reference) lists per
+operation (`resource:r`, `:rw`, `:rwd`). Keep `offline_access`, otherwise no refresh token is issued.
+`contacts:*` covers companies and persons; `tasks:*` covers time entries.
 
 The Developer Portal app must allow every scope you request: Scoro silently narrows the token to the
 app's Manage access list. Changing the Scope field requires reconnecting the credential.
@@ -106,38 +109,58 @@ Things worth knowing about the API:
 - Filters use bracket syntax: `filters[ids][]=1&filters[ids][]=2`,
   `filters[createdDateTime][from]=2026-01-01T00:00:00Z`.
 - On a site with several company accounts, send the `Scoro-Company-Account: <identifier>` header
-  yourself in the HTTP Request node.
+  yourself in the HTTP Request node. The two Scoro nodes send it for you when the credential names a
+  company account.
 - Errors are JSON with `error`, `statusCode` and `message` fields. A `403` with
   `insufficient_scope` means the Developer Portal app lacks a scope; add it and reconnect the
   credential.
 
 Full reference: <https://api.scoro.com/api/v4/reference>.
 
-## Scoro Trigger
+## Scoro Get Me
 
-The trigger registers a webhook subscription with Scoro when the workflow is activated and removes
-it when the workflow is deactivated.
+Calls `GET /api/v4/users/me` and outputs the user the credential is connected as. The node has no
+parameters. Useful fields:
+
+| Field | Meaning |
+|---|---|
+| `id`, `firstName`, `lastName`, `email`, `roleName`, `groupIds` | Who the token belongs to |
+| `accounts` | Company account identifiers the user can work in, for the credential's Company Account field or the `Scoro-Company-Account` header |
+| `enabledPermissions` | What the user may do, as `module.permission` strings |
+| `baseCurrency`, `dateFormat`, `timeFormat`, `thousandSeparator`, `decimalSeparator`, `timezone`, `languageId` | Site and user formatting settings |
+
+The node runs once per input item, so put it after a trigger or set *Execute Once* in the node settings
+when the input has many items.
+
+## Scoro Call Eli
+
+Calls `POST /api/v4/ai/messages`. Eli is the Scoro AI agent: give it a message in natural language and
+it can do pretty much anything in your Scoro environment that you could do yourself, from answering a
+question and looking up or reasoning over data across modules to carrying out work on your behalf.
+Eli acts as the user who connected the credential, within that user's permissions.
 
 | Parameter | Meaning |
 |---|---|
-| **Module** | What to watch, named as in the Scoro webhooks API: `tasks`, `projects`, `companies`, `persons`, `quotes`, `orders`, `invoices`, `bills`, `expenses`, `purchaseOrders`, `calendar`, `bookings`, `timeoff`, or the path of a custom module. |
-| **Event** | *Created*, *Modified*, *Deleted* or *Any Change*. |
-| **Return Full Record** | On (default): the output is the current record read from the API v4 (`/api/v4/<module in kebab-case>/<id>`), with camelCase fields. Off: the output is the webhook payload as Scoro sends it, whose `entity` snapshot uses older snake_case field names. Deleted records are always returned as delivered. |
-| **Options** | *Actors* and *Owners* (user IDs, `me`, `any` or one `group_<id>`), *Fields* to watch on modify, *Relation Type* with *Bookmark ID*, and *Record Endpoint* for modules whose API path is not the kebab-case module name (for example `/time-offs/{ID}` for `timeoff`). |
+| **Message** | What Eli should answer or do, in natural language, up to 10,000 characters. |
+| **Thread ID** | Leave empty to start a new conversation. Pass the `threadId` of an earlier answer to continue that conversation with its full history. |
 
-Every output item carries a `webhook` object with `module`, `action`, `entityId`, `entityType` and
-`actorId`, plus `recordFetchError` when the record could not be read and the delivered payload was
-returned instead.
+The output is Eli's answer: `response` (the text), `threadId`, `messageId`, `createdDateTime` and
+`isNewThread`. Use an expression such as `{{ $json.threadId }}` in a following Scoro Call Eli node to
+continue with a follow-up message.
 
-Two constraints come from Scoro, not from n8n:
+Things to know:
 
-- **Scoro delivers only to public, allow-listed hosts.** Registering a `localhost` URL fails with
-  "The provided URL is missing or malformed". Common automation hosts are allowed already; for an
-  n8n instance on your own domain, serve `https://<host>/scoro.txt` or publish a DNS TXT record
-  with the value `scoro.txt` on that host (see the Webhooks section of the API guide).
-- **Deliveries are not signed and not retried.** The unguessable n8n webhook URL is the only
-  protection against forged events, and an unreachable n8n misses the event. Keep a periodic poll
-  for anything you cannot afford to miss.
+- The call is synchronous and can take a minute or more; the node waits up to five minutes.
+- Eli must be enabled for the site and for the user who connected the credential, and
+  the credential needs the `ai:rw` scope. Otherwise the node fails with a `403`.
+- A `409` means the same question is already being answered: do not retry, continue the conversation
+  named in the error details instead. A `504` means Eli did not answer in time; the question is
+  stored in that conversation, ask again there to get the answer.
+- Answers may be shorter when the site's monthly AI allowance is exhausted.
+- `GET /api/v4/ai/threads` (through the HTTP Request node) lists your conversations, with their
+  `threadId`, when you need to find one to continue.
+
+Both nodes can be used as tools by n8n's AI Agent node.
 
 ## Example workflows
 
@@ -145,17 +168,16 @@ Importable JSON exports are in [`examples/`](examples/):
 
 - [`list-projects.json`](examples/list-projects.json): a manual trigger and an HTTP Request node that
   lists projects through the Scoro credential.
-- [`task-created.json`](examples/task-created.json): a Scoro Trigger on created tasks that picks the
-  fields a notification needs.
-- [`fetch-record-manually.json`](examples/fetch-record-manually.json): a Scoro Trigger with *Return
-  Full Record* off, followed by an HTTP Request that reads the record itself.
+- [`get-me.json`](examples/get-me.json): a manual trigger and Scoro Get Me.
+- [`call-eli.json`](examples/call-eli.json): a manual trigger, a message to Eli, and a follow-up
+  in the same conversation.
 
 After importing, select your credential in each node and replace `yoursite` in URLs.
 
 ## Compatibility
 
-Tested with n8n 2.45 (self-hosted, Docker); earlier n8n versions are untested. The trigger needs an
-n8n reachable from the internet (see above). Scoro API v4 only; API v2 is not supported.
+Tested with n8n 2.45 (self-hosted, Docker); earlier n8n versions are untested. Scoro API v4 only;
+API v2 is not supported.
 
 ## Resources
 
@@ -166,7 +188,10 @@ n8n reachable from the internet (see above). Scoro API v4 only; API v2 is not su
 
 ## Version history
 
-- **0.1.0**: first release. Scoro OAuth2 API credential and Scoro Trigger.
+- **Unreleased**: the Scoro Trigger node is removed; workflows that use it stop loading after the
+  update. New nodes Scoro Get Me and Scoro Call Eli. The default Scope list now includes `ai:rw` and
+  no longer includes `webhooks:rwd` (saved credentials keep their own list).
+- **0.3.0 and earlier**: Scoro OAuth2 API credential and Scoro Trigger.
 
 ## License
 
