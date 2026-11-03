@@ -1,6 +1,6 @@
 {
   "name": "@scoro/n8n-nodes-scoro",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "n8n community nodes for Scoro: a Scoro OAuth2 API credential for the HTTP Request node, Scoro Get Me, and Scoro Call Eli, the Scoro AI agent that can do pretty much anything in your Scoro environment (API v4)",
   "license": "MIT",
   "homepage": "https://github.com/Scoro-Software/n8n-nodes-scoro#readme",
