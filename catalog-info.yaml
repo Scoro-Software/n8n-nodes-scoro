@@ -1,0 +1,22 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: n8n-nodes-scoro
+  title: n8n Nodes for Scoro
+  description: n8n community node package with a Scoro OAuth2 credential and the Scoro Get Me and Scoro Call Eli nodes for API v4, published to npm as @scoro/n8n-nodes-scoro.
+  annotations:
+    github.com/project-slug: Scoro-Software/n8n-nodes-scoro
+  links:
+    - url: https://github.com/Scoro-Software/n8n-nodes-scoro/blob/main/AGENTS.md
+      title: Agent Instructions (AGENTS.md)
+      icon: docs
+    - url: https://www.npmjs.com/package/@scoro/n8n-nodes-scoro
+      title: npm package
+  tags:
+    - nodejs
+    - open-source
+    - n8n
+spec:
+  type: library
+  lifecycle: production
+  owner: group:default/platform-team
