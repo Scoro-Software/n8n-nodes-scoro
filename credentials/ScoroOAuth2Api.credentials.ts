@@ -3,19 +3,19 @@ import type { ICredentialType, Icon, INodeProperties } from 'n8n-workflow';
 /**
  * Default value of the editable Scope field.
  *
- * Read/write/delete on the core resources so the credential is useful from the HTTP Request
- * node, read on every module the Scoro Trigger can fetch a record for (its "Return Full
- * Record" option), and `webhooks:rwd` for the trigger's subscriptions. Scope names are the
- * ones the Scoro API v4 schema lists in each operation's `security` entry; `contacts:*` covers
- * companies and persons, `tasks:*` covers time entries, and `base:r` (reference data such as
- * statuses and `/users/me`) is granted automatically. `offline_access` is required to receive
- * a refresh token.
+ * `ai:rw` for the Scoro Call Eli node (Scoro Get Me only needs `base:r`, which is granted
+ * automatically), read/write/delete on the core resources so the credential is useful from the
+ * HTTP Request node, and read on the remaining modules. Scope names are the ones the Scoro API
+ * v4 schema lists in each operation's `security` entry; `contacts:*` covers companies and
+ * persons, `tasks:*` covers time entries, and `base:r` (reference data such as statuses and
+ * `/users/me`) is granted automatically. `offline_access` is required to receive a refresh token.
  *
  * A token can never hold more scopes than the Developer Portal app allows. Users edit the list
  * in the credential; changing it requires reconnecting.
  */
 const DEFAULT_SCOPES = [
 	'offline_access',
+	'ai:rw',
 	'projects:rwd',
 	'tasks:rwd',
 	'contacts:rwd',
@@ -23,7 +23,6 @@ const DEFAULT_SCOPES = [
 	'orders:rwd',
 	'invoices:rwd',
 	'products:rwd',
-	'webhooks:rwd',
 	'bills:r',
 	'bookings:r',
 	'calendar:r',

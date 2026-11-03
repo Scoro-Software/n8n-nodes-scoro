@@ -1,11 +1,10 @@
 import type {
 	IDataObject,
-	IHookFunctions,
+	IExecuteFunctions,
 	IHttpRequestMethods,
 	IHttpRequestOptions,
 	ILoadOptionsFunctions,
 	INode,
-	IWebhookFunctions,
 	JsonObject,
 } from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
@@ -17,7 +16,22 @@ interface ScoroCredentials {
 	companyAccount?: string;
 }
 
-type ApiContext = IHookFunctions | IWebhookFunctions | ILoadOptionsFunctions;
+type ApiContext = IExecuteFunctions | ILoadOptionsFunctions;
+
+/** Error text shown for one HTTP status, replacing the generic text of `toScoroError`. */
+export interface StatusMessage {
+	message: string;
+	description?: string;
+}
+
+export interface ScoroRequestOptions {
+	/** Query string parameters. */
+	qs?: IDataObject;
+	/** Request timeout in milliseconds. n8n applies no timeout when this is unset. */
+	timeout?: number;
+	/** Endpoint-specific error texts by HTTP status. */
+	errorMessages?: Partial<Record<number, StatusMessage>>;
+}
 
 /** Host of a Scoro site from the Site URL field: protocol, path and whitespace are ignored. */
 export function siteHost(siteUrl: string): string {
@@ -40,7 +54,7 @@ export async function scoroApiRequest(
 	method: IHttpRequestMethods,
 	path: string,
 	body?: IDataObject,
-	qs?: IDataObject,
+	requestOptions: ScoroRequestOptions = {},
 ): Promise<unknown> {
 	const credentials = (await this.getCredentials(CREDENTIAL_NAME)) as unknown as ScoroCredentials;
 	const headers: IDataObject = { Accept: 'application/json' };
@@ -54,11 +68,12 @@ export async function scoroApiRequest(
 		headers,
 	};
 	if (body !== undefined) options.body = body;
-	if (qs !== undefined) options.qs = qs;
+	if (requestOptions.qs !== undefined) options.qs = requestOptions.qs;
+	if (requestOptions.timeout !== undefined) options.timeout = requestOptions.timeout;
 	try {
 		return await this.helpers.httpRequestWithAuthentication.call(this, CREDENTIAL_NAME, options);
 	} catch (error) {
-		throw toScoroError(this.getNode(), error);
+		throw toScoroError(this.getNode(), error, requestOptions.errorMessages);
 	}
 }
 
@@ -120,8 +135,14 @@ function messagesFrom(body: unknown): string[] {
 /**
  * Turns an error thrown by an HTTP request to Scoro into a NodeApiError whose message says
  * what went wrong and what to do about it. Non-HTTP errors are returned unchanged.
+ * `errorMessages` replaces the generic text for the statuses it names, except for a 403 that
+ * reports a missing scope, which always names the scope.
  */
-export function toScoroError(node: INode, error: unknown): Error {
+export function toScoroError(
+	node: INode,
+	error: unknown,
+	errorMessages: Partial<Record<number, StatusMessage>> = {},
+): Error {
 	// Errors mapped once must not be mapped again.
 	if (error instanceof NodeApiError && error.context?.scoroMapped === true) {
 		return error;
@@ -135,6 +156,7 @@ export function toScoroError(node: INode, error: unknown): Error {
 	const messages = messagesFrom(body);
 	const errorName = typeof b.error === 'string' ? b.error : undefined;
 	const detail = messages.join(' ');
+	const missingScope = status === 403 && errorName === 'insufficient_scope';
 
 	let message: string;
 	let description = detail || undefined;
@@ -147,11 +169,11 @@ export function toScoroError(node: INode, error: unknown): Error {
 			description = `${detail ? `${detail}. ` : ''}Reconnect the Scoro OAuth2 credential. If the site restricts API access by IP address, make sure the n8n host is on its allow-list.`;
 			break;
 		case 403:
-			if (errorName === 'insufficient_scope') {
+			if (missingScope) {
 				const scope = typeof b.required_scope === 'string' ? b.required_scope : 'the required';
 				message = `The connected Scoro app does not have the "${scope}" scope`;
 				description =
-					'Add the scope under "Manage access" of the app in the Scoro Developer Portal, then reconnect the Scoro OAuth2 credential so a new token is issued.';
+					'Add the scope under "Manage access" of the app in the Scoro Developer Portal, add it to the Scope field of the credential, then reconnect the credential so a new token is issued.';
 			} else {
 				message = 'Scoro denied access';
 				description = `${detail ? `${detail}. ` : ''}The user who connected the credential may lack the module or permission, or the company account is not accessible.`;
@@ -175,13 +197,23 @@ export function toScoroError(node: INode, error: unknown): Error {
 				description = 'The request can be retried.';
 			}
 	}
+	const override = errorMessages[status];
+	if (override && !missingScope) {
+		message = override.message;
+		if (override.description) {
+			description = `${override.description}${detail ? ` (${detail})` : ''}`;
+		}
+	}
 	if (description && errorName && !description.includes(errorName) && status !== 403) {
 		description = `${description} (${errorName})`;
 	} else if (!description && errorName) {
 		description = errorName;
 	}
 
-	const mapped = new NodeApiError(node, { message: detail, error: errorName } as JsonObject, {
+	// The full error body stays available under the error details (for example the
+	// conversation a 409 or 504 from the AI assistant refers to).
+	const errorResponse = { ...b, message: detail, error: errorName } as JsonObject;
+	const mapped = new NodeApiError(node, errorResponse, {
 		message,
 		description,
 		httpCode: String(status),

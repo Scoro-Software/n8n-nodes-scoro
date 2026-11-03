@@ -29,8 +29,8 @@ npm run release
 `npm run release` runs `n8n-node release`, which on a developer machine:
 
 1. runs `npm run lint` and `npm run build`;
-2. prompts for the version bump (the package starts at `0.0.0`, so the first release is a
-   *minor* bump to `0.1.0`);
+2. prompts for the version bump (removing or renaming a node is breaking for existing workflows,
+   so bump at least the minor version before 1.0);
 3. regenerates `CHANGELOG.md` from the commit history (`auto-changelog`), commits
    `chore(release): vX.Y.Z`, tags `vX.Y.Z` (see `.release-it.json`), pushes, and creates the
    GitHub release.
@@ -50,5 +50,5 @@ and publishes to npm with `NPM_CONFIG_PROVENANCE=true`. The package is public (`
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: install, lint,
-build, the trigger harness (`testing/scripts/trigger-harness.mjs`) and `npm pack --dry-run` to
-show what would be published.
+build, the node harness (`testing/scripts/nodes-harness.mjs`) and `npm pack --dry-run` to show
+what would be published.

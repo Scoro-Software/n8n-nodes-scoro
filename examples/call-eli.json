@@ -1,0 +1,44 @@
+{
+	"name": "Scoro: ask Eli",
+	"nodes": [
+		{
+			"parameters": {},
+			"id": "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c13",
+			"name": "When clicking 'Execute workflow'",
+			"type": "n8n-nodes-base.manualTrigger",
+			"typeVersion": 1,
+			"position": [0, 0]
+		},
+		{
+			"parameters": {
+				"message": "Which of my tasks are overdue? Answer with a short list."
+			},
+			"id": "7c6d5e4f-3a2b-4c1d-9e8f-7a6b5c4d3e24",
+			"name": "Scoro Call Eli",
+			"type": "@scoro/n8n-nodes-scoro.scoroCallEli",
+			"typeVersion": 1,
+			"position": [240, 0]
+		},
+		{
+			"parameters": {
+				"message": "Group them by project.",
+				"threadId": "={{ $json.threadId }}"
+			},
+			"id": "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a35",
+			"name": "Continue the conversation",
+			"type": "@scoro/n8n-nodes-scoro.scoroCallEli",
+			"typeVersion": 1,
+			"position": [480, 0]
+		}
+	],
+	"connections": {
+		"When clicking 'Execute workflow'": {
+			"main": [[{ "node": "Scoro Call Eli", "type": "main", "index": 0 }]]
+		},
+		"Scoro Call Eli": {
+			"main": [[{ "node": "Continue the conversation", "type": "main", "index": 0 }]]
+		}
+	},
+	"settings": { "executionOrder": "v1" },
+	"meta": { "templateCredsSetupCompleted": false }
+}
