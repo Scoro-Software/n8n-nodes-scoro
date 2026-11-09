@@ -27,11 +27,20 @@ export interface StatusMessage {
 export interface ScoroRequestOptions {
 	/** Query string parameters. */
 	qs?: IDataObject;
+	/** Extra request headers; they override the defaults, including `Scoro-Company-Account`. */
+	headers?: IDataObject;
+	/**
+	 * Company account for this call. A non-blank value replaces the one named by the credential
+	 * (and any `Scoro-Company-Account` entry in `headers`); blank means "use the credential's".
+	 */
+	companyAccount?: string;
 	/** Request timeout in milliseconds. n8n applies no timeout when this is unset. */
 	timeout?: number;
 	/** Endpoint-specific error texts by HTTP status. */
 	errorMessages?: Partial<Record<number, StatusMessage>>;
 }
+
+export const COMPANY_ACCOUNT_HEADER = 'Scoro-Company-Account';
 
 /** Host of a Scoro site from the Site URL field: protocol, path and whitespace are ignored. */
 export function siteHost(siteUrl: string): string {
@@ -47,7 +56,7 @@ export function apiBaseUrl(siteUrl: string): string {
 /**
  * Makes an authenticated request to the Scoro API v4 with the Scoro OAuth2 credential.
  * Sends the `Scoro-Company-Account` header when the credential names a company account
- * (multi-entity sites); an empty value must not produce an empty header.
+ * (multi-entity sites) or the call overrides it; an empty value must not produce an empty header.
  */
 export async function scoroApiRequest(
 	this: ApiContext,
@@ -58,9 +67,20 @@ export async function scoroApiRequest(
 ): Promise<unknown> {
 	const credentials = (await this.getCredentials(CREDENTIAL_NAME)) as unknown as ScoroCredentials;
 	const headers: IDataObject = { Accept: 'application/json' };
-	const companyAccount = credentials.companyAccount?.trim();
-	if (companyAccount) {
-		headers['Scoro-Company-Account'] = companyAccount;
+	const defaultAccount = credentials.companyAccount?.trim();
+	if (defaultAccount) {
+		headers[COMPANY_ACCOUNT_HEADER] = defaultAccount;
+	}
+	for (const [name, value] of Object.entries(requestOptions.headers ?? {})) {
+		if (name.trim()) headers[name.trim()] = value;
+	}
+	const overrideAccount = requestOptions.companyAccount?.trim();
+	if (overrideAccount) {
+		// Drop a differently-cased header of the same name so only one value is sent.
+		for (const name of Object.keys(headers)) {
+			if (name.toLowerCase() === COMPANY_ACCOUNT_HEADER.toLowerCase()) delete headers[name];
+		}
+		headers[COMPANY_ACCOUNT_HEADER] = overrideAccount;
 	}
 	const options: IHttpRequestOptions = {
 		method,
@@ -75,6 +95,22 @@ export async function scoroApiRequest(
 	} catch (error) {
 		throw toScoroError(this.getNode(), error, requestOptions.errorMessages);
 	}
+}
+
+/**
+ * Turns a raw API response into the JSON objects of output items: a bare array (Scoro lists)
+ * becomes one object per element, an object stays as is, an empty body (204 on DELETE) becomes
+ * `{ success: true }`, and any other value is wrapped as `{ data }`.
+ */
+export function toOutputObjects(response: unknown): IDataObject[] {
+	if (response === undefined || response === null || response === '') {
+		return [{ success: true }];
+	}
+	const toObject = (value: unknown): IDataObject =>
+		value !== null && typeof value === 'object' && !Array.isArray(value)
+			? (value as IDataObject)
+			: { data: value as IDataObject[keyof IDataObject] };
+	return Array.isArray(response) ? response.map(toObject) : [toObject(response)];
 }
 
 // ---------------------------------------------------------------------------

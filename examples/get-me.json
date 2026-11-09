@@ -10,17 +10,20 @@
 			"position": [0, 0]
 		},
 		{
-			"parameters": {},
+			"parameters": {
+				"resource": "user",
+				"operation": "getMe"
+			},
 			"id": "9e8f7a6b-5c4d-4e3f-a2b1-c0d9e8f7a602",
-			"name": "Scoro Get Me",
-			"type": "@scoro/n8n-nodes-scoro.scoroGetMe",
+			"name": "Get me",
+			"type": "@scoro/n8n-nodes-scoro.scoro",
 			"typeVersion": 1,
 			"position": [240, 0]
 		}
 	],
 	"connections": {
 		"When clicking 'Execute workflow'": {
-			"main": [[{ "node": "Scoro Get Me", "type": "main", "index": 0 }]]
+			"main": [[{ "node": "Get me", "type": "main", "index": 0 }]]
 		}
 	},
 	"settings": { "executionOrder": "v1" },

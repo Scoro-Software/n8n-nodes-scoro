@@ -3,7 +3,7 @@
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
 	"categories": ["Productivity", "Sales", "Finance & Accounting"],
-	"alias": ["AI", "Agent", "Assistant", "Eli", "Chat"],
+	"alias": ["Eli"],
 	"resources": {
 		"credentialDocumentation": [
 			{
@@ -12,7 +12,7 @@
 		],
 		"primaryDocumentation": [
 			{
-				"url": "https://github.com/Scoro-Software/n8n-nodes-scoro#scoro-call-eli"
+				"url": "https://github.com/Scoro-Software/n8n-nodes-scoro#scoro-node"
 			}
 		]
 	}

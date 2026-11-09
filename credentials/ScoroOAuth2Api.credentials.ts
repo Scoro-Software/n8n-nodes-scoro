@@ -3,9 +3,9 @@ import type { ICredentialType, Icon, INodeProperties } from 'n8n-workflow';
 /**
  * Default value of the editable Scope field.
  *
- * `ai:rw` for the Scoro Call Eli node (Scoro Get Me only needs `base:r`, which is granted
- * automatically), read/write/delete on the core resources so the credential is useful from the
- * HTTP Request node, and read on the remaining modules. Scope names are the ones the Scoro API
+ * `ai:rw` for the Eli resource of the Scoro node (User → Get Me only needs `base:r`, which is
+ * granted automatically), read/write/delete on the core resources so the credential is useful
+ * from the HTTP Request node, and read on the remaining modules. Scope names are the ones the Scoro API
  * v4 schema lists in each operation's `security` entry; `contacts:*` covers companies and
  * persons, `tasks:*` covers time entries, and `base:r` (reference data such as statuses and
  * `/users/me`) is granted automatically. `offline_access` is required to receive a refresh token.
