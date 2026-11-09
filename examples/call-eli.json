@@ -11,31 +11,38 @@
 		},
 		{
 			"parameters": {
-				"message": "Which of my tasks are overdue? Answer with a short list."
+				"resource": "eli",
+				"operation": "sendMessage",
+				"message": "Which of my tasks are overdue? Answer with a short list.",
+				"options": {}
 			},
 			"id": "7c6d5e4f-3a2b-4c1d-9e8f-7a6b5c4d3e24",
-			"name": "Scoro Call Eli",
-			"type": "@scoro/n8n-nodes-scoro.scoroCallEli",
+			"name": "Ask Eli",
+			"type": "@scoro/n8n-nodes-scoro.scoro",
 			"typeVersion": 1,
 			"position": [240, 0]
 		},
 		{
 			"parameters": {
+				"resource": "eli",
+				"operation": "sendMessage",
 				"message": "Group them by project.",
-				"threadId": "={{ $json.threadId }}"
+				"options": {
+					"threadId": "={{ $json.threadId }}"
+				}
 			},
 			"id": "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a35",
 			"name": "Continue the conversation",
-			"type": "@scoro/n8n-nodes-scoro.scoroCallEli",
+			"type": "@scoro/n8n-nodes-scoro.scoro",
 			"typeVersion": 1,
 			"position": [480, 0]
 		}
 	],
 	"connections": {
 		"When clicking 'Execute workflow'": {
-			"main": [[{ "node": "Scoro Call Eli", "type": "main", "index": 0 }]]
+			"main": [[{ "node": "Ask Eli", "type": "main", "index": 0 }]]
 		},
-		"Scoro Call Eli": {
+		"Ask Eli": {
 			"main": [[{ "node": "Continue the conversation", "type": "main", "index": 0 }]]
 		}
 	},

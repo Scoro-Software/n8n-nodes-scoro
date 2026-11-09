@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Runs the compiled Scoro Get Me and Scoro Call Eli nodes outside n8n, with a stub execution
- * context, to check the requests they build and the way they report errors.
+ * Runs the compiled Scoro node outside n8n, with a stub execution context, to check the requests
+ * its operations (User → Get Me, Eli → Send Message) build and the way they report errors.
  *
  *   npm run build && node testing/scripts/nodes-harness.mjs
  *
@@ -13,10 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
-const { ScoroGetMe } = require(join(ROOT, 'dist', 'nodes', 'Scoro', 'ScoroGetMe.node.js'));
-const { ScoroCallEli, ELI_TIMEOUT_MS } = require(
-	join(ROOT, 'dist', 'nodes', 'Scoro', 'ScoroCallEli.node.js'),
-);
+const { Scoro, ELI_TIMEOUT_MS } = require(join(ROOT, 'dist', 'nodes', 'Scoro', 'Scoro.node.js'));
 
 let failures = 0;
 const check = (label, ok, detail = '') => {
@@ -24,19 +21,26 @@ const check = (label, ok, detail = '') => {
 	if (!ok) failures += 1;
 };
 
-/** Stub of the parts of IExecuteFunctions the nodes use. `params` is indexed by item. */
+/**
+ * Stub of the parts of IExecuteFunctions the node uses. `params` is indexed by item; `resource`
+ * and `operation` select what the node does.
+ */
 function context({
 	items = [{ json: {} }],
 	params = [{}],
 	fetchImpl,
 	continueOnFail = false,
 	companyAccount = 'acme',
+	resource = 'user',
+	operation = 'getMe',
 }) {
 	const calls = [];
 	return {
 		calls,
 		getInputData: () => items,
 		getNodeParameter: (name, i, fallback) => {
+			if (name === 'resource') return resource;
+			if (name === 'operation') return operation;
 			const p = params[i] ?? params[0] ?? {};
 			return name in p ? p[name] : fallback;
 		},
@@ -65,8 +69,10 @@ function httpError(status, data, headers = {}) {
 	});
 }
 
-const getMe = new ScoroGetMe();
-const callEli = new ScoroCallEli();
+const scoro = new Scoro();
+const getMe = (overrides) => context({ resource: 'user', operation: 'getMe', ...overrides });
+const sendMessage = (overrides) =>
+	context({ resource: 'eli', operation: 'sendMessage', ...overrides });
 const user = { id: 7, firstName: 'Ada', accounts: ['acme'] };
 const answer = {
 	threadId: 'thr_1',
@@ -76,11 +82,11 @@ const answer = {
 	isNewThread: true,
 };
 
-// --- Scoro Get Me -------------------------------------------------------------------------
+// --- User → Get Me --------------------------------------------------------------------------
 
 {
-	const ctx = context({ fetchImpl: async () => user });
-	const [out] = await getMe.execute.call(ctx);
+	const ctx = getMe({ fetchImpl: async () => user });
+	const [out] = await scoro.execute.call(ctx);
 	const call = ctx.calls[0];
 	check(
 		'Get Me requests GET /users/me on the site host (any Scoro domain)',
@@ -98,13 +104,16 @@ const answer = {
 }
 
 {
-	const ctx = context({
+	const ctx = getMe({
 		items: [{ json: {} }, { json: {} }],
 		fetchImpl: async () => user,
 		companyAccount: '  ',
 	});
-	const [out] = await getMe.execute.call(ctx);
-	check('Get Me runs once per input item', ctx.calls.length === 2 && out[1]?.pairedItem?.item === 1);
+	const [out] = await scoro.execute.call(ctx);
+	check(
+		'Get Me runs once per input item',
+		ctx.calls.length === 2 && out[1]?.pairedItem?.item === 1,
+	);
 	check(
 		'blank company account sends no header',
 		!('Scoro-Company-Account' in (ctx.calls[0]?.headers ?? {})),
@@ -112,14 +121,14 @@ const answer = {
 }
 
 {
-	const ctx = context({
+	const ctx = getMe({
 		fetchImpl: async () => {
 			throw httpError(401, { error: 'unauthorized', message: ['Token expired'] });
 		},
 	});
 	let caught;
 	try {
-		await getMe.execute.call(ctx);
+		await scoro.execute.call(ctx);
 	} catch (error) {
 		caught = error;
 	}
@@ -137,13 +146,13 @@ const answer = {
 }
 
 {
-	const ctx = context({
+	const ctx = getMe({
 		continueOnFail: true,
 		fetchImpl: async () => {
 			throw httpError(500, 'boom');
 		},
 	});
-	const [out] = await getMe.execute.call(ctx);
+	const [out] = await scoro.execute.call(ctx);
 	check(
 		'Continue On Fail turns the error into an item',
 		out[0]?.json?.error === 'Scoro API error (500)' && out[0]?.pairedItem?.item === 0,
@@ -151,17 +160,17 @@ const answer = {
 	);
 }
 
-// --- Scoro Call Eli -----------------------------------------------------------------------
+// --- Eli → Send Message ---------------------------------------------------------------------
 
 {
-	const ctx = context({
-		params: [{ message: 'Which tasks are overdue?', threadId: '' }],
+	const ctx = sendMessage({
+		params: [{ message: 'Which tasks are overdue?', options: {} }],
 		fetchImpl: async () => answer,
 	});
-	const [out] = await callEli.execute.call(ctx);
+	const [out] = await scoro.execute.call(ctx);
 	const call = ctx.calls[0];
 	check(
-		'Call Eli posts to /ai/messages',
+		'Send Message posts to /ai/messages',
 		call?.method === 'POST' && call?.url === 'https://Example.scoro.ee/api/v4/ai/messages',
 		call?.url,
 	);
@@ -171,12 +180,12 @@ const answer = {
 		JSON.stringify(call?.body),
 	);
 	check(
-		'Call Eli sets a long timeout',
+		'Send Message sets a long timeout',
 		call?.timeout === ELI_TIMEOUT_MS && ELI_TIMEOUT_MS >= 120_000,
 		String(call?.timeout),
 	);
 	check(
-		'Call Eli outputs the answer as delivered',
+		'Send Message outputs the answer as delivered',
 		out[0]?.json?.response === answer.response &&
 			out[0]?.json?.threadId === 'thr_1' &&
 			out[0]?.pairedItem?.item === 0,
@@ -184,27 +193,27 @@ const answer = {
 }
 
 {
-	const ctx = context({
-		params: [{ message: 'Group them by project.', threadId: ' thr_1 ' }],
+	const ctx = sendMessage({
+		params: [{ message: 'Group them by project.', options: { threadId: ' thr_1 ' } }],
 		fetchImpl: async () => ({ ...answer, isNewThread: false }),
 	});
-	await callEli.execute.call(ctx);
+	await scoro.execute.call(ctx);
 	check(
-		'a Thread ID continues the conversation (trimmed)',
+		'a Thread ID in Options continues the conversation (trimmed)',
 		ctx.calls[0]?.body?.threadId === 'thr_1',
 		JSON.stringify(ctx.calls[0]?.body),
 	);
 }
 
 const eliFailure = async (status, data) => {
-	const ctx = context({
+	const ctx = sendMessage({
 		params: [{ message: 'Hi' }],
 		fetchImpl: async () => {
 			throw httpError(status, data);
 		},
 	});
 	try {
-		await callEli.execute.call(ctx);
+		await scoro.execute.call(ctx);
 	} catch (error) {
 		return error;
 	}
@@ -218,14 +227,23 @@ const eliFailure = async (status, data) => {
 		message: ['Already answering'],
 		threadId: 'thr_9',
 	});
-	check('409 says Eli is still answering', e?.message === 'Eli is still answering the same question', e?.message);
+	check(
+		'409 says Eli is still answering',
+		e?.message === 'Eli is still answering the same question',
+		e?.message,
+	);
 	check('409 keeps the API body in the error details', e?.errorResponse?.threadId === 'thr_9');
 }
 {
-	const e = await eliFailure(504, { error: 'timeout', statusCode: 504, message: ['No answer in time'] });
+	const e = await eliFailure(504, {
+		error: 'timeout',
+		statusCode: 504,
+		message: ['No answer in time'],
+	});
 	check(
 		'504 says Eli did not answer in time',
-		e?.message === 'Eli did not answer in time' && String(e?.description).includes('No answer in time'),
+		e?.message === 'Eli did not answer in time' &&
+			String(e?.description).includes('No answer in time'),
 		e?.message,
 	);
 }
@@ -255,5 +273,24 @@ const eliFailure = async (status, data) => {
 	);
 }
 
-console.log(failures === 0 ? '\nAll node harness checks passed.' : `\n${failures} check(s) failed.`);
+// --- Unknown resource / operation ------------------------------------------------------------
+
+{
+	const ctx = context({ resource: 'user', operation: 'nope', fetchImpl: async () => user });
+	let caught;
+	try {
+		await scoro.execute.call(ctx);
+	} catch (error) {
+		caught = error;
+	}
+	check(
+		'an unknown operation fails with a NodeOperationError and no request',
+		caught?.constructor?.name === 'NodeOperationError' && ctx.calls.length === 0,
+		caught?.message,
+	);
+}
+
+console.log(
+	failures === 0 ? '\nAll node harness checks passed.' : `\n${failures} check(s) failed.`,
+);
 process.exit(failures === 0 ? 0 : 1);
