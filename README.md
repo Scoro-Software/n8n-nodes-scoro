@@ -225,7 +225,7 @@ API v2 is not supported.
 
 ## Version history
 
-- **Unreleased**: the Scoro Get Me and Scoro Call Eli nodes are merged into a single **Scoro** node
+- **0.5.0**: the Scoro Get Me and Scoro Call Eli nodes are merged into a single **Scoro** node
   with a User resource (Get Me) and an Eli resource (Send Message), as n8n's verification
   guidelines allow one regular node per package. Thread ID moved into the Options collection. New
   **Custom API Call** resource for any other endpoint (method, endpoint, query parameters, headers,
