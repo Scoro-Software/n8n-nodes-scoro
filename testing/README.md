@@ -51,8 +51,13 @@ site add a `Scoro-Company-Account` header yourself.
   Options → Thread ID to a second Scoro node. A `403` with `insufficient_scope` means the app or the
   credential's Scope field lacks `ai:rw`; a plain `403` means the assistant is not enabled for the
   user or site.
+- **Custom API Call → Send Request**: `GET` with endpoint `/projects` and query parameter `perPage`
+  = `3` should output three items (one per project). `GET /projects/999999` should fail with "The
+  Scoro record was not found". A `POST` to `/projects/<id>/comments` with body field `comment`
+  creates a comment on that project.
 
-Both operations run once per input item.
+All operations run once per input item. On a multi-entity site, set **Options → Company Account**
+to another account identifier from Get Me's `accounts` and check that the output changes.
 
 What can be tested without a Scoro site:
 
@@ -60,10 +65,11 @@ What can be tested without a Scoro site:
 npm run build && node testing/scripts/nodes-harness.mjs
 ```
 
-runs the compiled `execute()` of the node for both operations against a stub context and checks the
-URLs, headers, request bodies, the Thread ID option, timeout, `pairedItem`, Continue On Fail, the
-mapped error messages (401, 403 with and without a missing scope, 409, 500, 504) and the error for an
-unknown operation.
+runs the compiled `execute()` of the node for all three operations against a stub context and checks
+the URLs, headers, request bodies, the Thread ID and Company Account options, timeout, `pairedItem`,
+Continue On Fail, the mapped error messages (401, 403 with and without a missing scope, 404, 409,
+500, 504), the Custom API Call URL and body building, list splitting, empty responses, and the errors
+for an invalid JSON body, an empty endpoint and an unknown operation.
 
 ## 5. Evidence screenshots
 

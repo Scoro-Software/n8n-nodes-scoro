@@ -12,6 +12,12 @@ that small:
     `Options` collection. Eli is the Scoro AI agent; describe it as able to do pretty much anything
     in the Scoro environment that the connected user could do (answer, look up, reason, carry out
     work), not as a read-only assistant.
+  - **Custom API Call → Send Request**: any method (`DELETE`, `GET`, `HEAD`, `PATCH`, `POST`, `PUT`,
+    everything `IHttpRequestMethods` allows) and endpoint path under `/api/v4`, both required, plus
+    query parameters, headers and a body (name/value fields or JSON) for `PATCH`/`POST`/`PUT`. The
+    endpoint is typed by the user; do not add per-endpoint operations.
+  - Every operation has an `Options → Company Account` field that overrides the credential's company
+    account for that call (`transport.ts` handles the header precedence).
 
 Shared request and error-mapping helpers live in `nodes/Scoro/shared/transport.ts`. The node is
 programmatic (`execute()`), runs once per input item, supports Continue On Fail, and is usable as an
@@ -21,11 +27,11 @@ n8n's verification guidelines allow one regular node per package (plus an option
 first review of 0.4.0 rejected the package for shipping Scoro Get Me and Scoro Call Eli as two nodes,
 for generic codex aliases ("AI", "Agent", "Assistant", "Chat"), and for an optional field outside an
 Options collection. Keep to one node, Scoro-specific aliases only (`Eli`), and optional fields in
-`Options`. There is no long list of Scoro operations on purpose, and no trigger (the Scoro Trigger
-that shipped up to 0.3.0 was removed by maintainer decision in November 2026). Do not add either; the
-HTTP Request node covers the rest of the API. n8n refuses a package without nodes (installer error
-"The specified package does not contain any nodes", lint error on an empty `n8n.nodes`), which is why
-the small node exists.
+`Options`. There is no list of per-endpoint Scoro operations on purpose, and no trigger (the Scoro
+Trigger that shipped up to 0.3.0 was removed by maintainer decision in November 2026). Do not add
+either; the HTTP Request node and Custom API Call cover the rest of the API. n8n refuses a package
+without nodes (installer error "The specified package does not contain any nodes", lint error on an
+empty `n8n.nodes`), which is why the small node exists.
 
 ## Rules that n8n verification enforces
 

@@ -3,7 +3,7 @@ kind: Component
 metadata:
   name: n8n-nodes-scoro
   title: n8n Nodes for Scoro
-  description: n8n community node package with a Scoro OAuth2 credential and a Scoro node (User → Get Me, Eli → Send Message) for API v4, published to npm as @scoro/n8n-nodes-scoro.
+  description: n8n community node package with a Scoro OAuth2 credential and a Scoro node (User → Get Me, Eli → Send Message, Custom API Call) for API v4, published to npm as @scoro/n8n-nodes-scoro.
   annotations:
     github.com/project-slug: Scoro-Software/n8n-nodes-scoro
   links:

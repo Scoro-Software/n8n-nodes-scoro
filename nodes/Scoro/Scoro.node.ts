@@ -1,13 +1,21 @@
 import type {
 	IDataObject,
 	IExecuteFunctions,
+	IHttpRequestMethods,
 	INodeExecutionData,
+	INodeProperties,
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
-import { CREDENTIAL_NAME, scoroApiRequest, type StatusMessage } from './shared/transport';
+import {
+	CREDENTIAL_NAME,
+	scoroApiRequest,
+	toOutputObjects,
+	type ScoroRequestOptions,
+	type StatusMessage,
+} from './shared/transport';
 
 /**
  * Eli answers synchronously and "can take a minute or more" (API reference), so the request gets
@@ -39,7 +47,112 @@ export const ELI_ERROR_MESSAGES: Partial<Record<number, StatusMessage>> = {
 };
 
 /**
- * The Scoro node. One resource per thing the package does out of the box:
+ * HTTP methods offered by Custom API Call: every method n8n's request helper supports. The API v4
+ * itself uses GET, POST, PATCH and DELETE.
+ */
+const HTTP_METHODS: IHttpRequestMethods[] = ['DELETE', 'GET', 'HEAD', 'PATCH', 'POST', 'PUT'];
+
+/** Methods for which Custom API Call shows the body fields. */
+const METHODS_WITH_BODY = ['PATCH', 'POST', 'PUT'];
+
+/** A name/value pair from one of the fixed collections (query parameters, headers, body fields). */
+interface NameValue {
+	name: string;
+	value: unknown;
+}
+
+/** Shape of the `parameters`-style fixed collections: `{ <collectionName>: NameValue[] }`. */
+type NameValueCollection = Record<string, NameValue[] | undefined>;
+
+/**
+ * Normalises what the user typed into the Endpoint field into a path under /api/v4: whitespace
+ * trimmed, an accidental `/api/v4` prefix removed, a leading slash guaranteed.
+ */
+export function normalizeEndpoint(endpoint: string): string {
+	let path = endpoint.trim().replace(/^\/?api\/v4(?=\/|$)/i, '');
+	if (!path.startsWith('/')) path = `/${path}`;
+	return path;
+}
+
+/** Builds a query string from name/value pairs; repeated names (`filters[ids][]`) are kept. */
+export function buildQueryString(pairs: NameValue[]): string {
+	const encode = (value: unknown) =>
+		encodeURIComponent(
+			value === null || value === undefined
+				? ''
+				: typeof value === 'object'
+					? JSON.stringify(value)
+					: String(value),
+		);
+	return pairs
+		.filter((pair) => pair.name.trim() !== '')
+		.map((pair) => `${encodeURIComponent(pair.name.trim())}=${encode(pair.value)}`)
+		.join('&');
+}
+
+/** The Company Account override shared by every operation, inside its Options collection. */
+const companyAccountOption: INodeProperties = {
+	displayName: 'Company Account',
+	name: 'companyAccount',
+	type: 'string',
+	default: '',
+	placeholder: 'e.g. acme-uk',
+	description:
+		'Company account to work in for this call, sent as the Scoro-Company-Account header. Overrides the Company Account of the credential; leave empty to use that one. Identifiers are listed under accounts in the output of User → Get Me.',
+};
+
+/** Name/value pairs the way the HTTP Request node collects them. */
+function nameValueCollection(
+	displayName: string,
+	name: string,
+	collectionName: string,
+	entryName: string,
+	placeholder: string,
+	valuePlaceholder: string,
+	methods?: string[],
+): INodeProperties {
+	return {
+		displayName,
+		name,
+		type: 'fixedCollection',
+		typeOptions: {
+			multipleValues: true,
+		},
+		placeholder,
+		default: {},
+		displayOptions: {
+			show: {
+				resource: ['customApiCall'],
+				operation: ['sendRequest'],
+				...(methods ? { method: methods } : {}),
+			},
+		},
+		options: [
+			{
+				displayName: entryName,
+				name: collectionName,
+				values: [
+					{
+						displayName: 'Name',
+						name: 'name',
+						type: 'string',
+						default: '',
+					},
+					{
+						displayName: 'Value',
+						name: 'value',
+						type: 'string',
+						default: '',
+						placeholder: valuePlaceholder,
+					},
+				],
+			},
+		],
+	};
+}
+
+/**
+ * The Scoro node. One resource per thing the package does out of the box, plus an escape hatch:
  *
  * - **User → Get Me**: GET /api/v4/users/me, the user the credential is connected as, with the
  *   company accounts, enabled permissions and site settings a workflow needs before calling
@@ -49,9 +162,10 @@ export const ELI_ERROR_MESSAGES: Partial<Record<number, StatusMessage>> = {
  *   look up and reason over data across modules, and carry out work, from a natural-language
  *   message. Each call either starts a new conversation or continues the one named by Thread ID
  *   with its full history.
+ * - **Custom API Call → Send Request**: any method and path under /api/v4, with query
+ *   parameters, headers and a body, for the endpoints the node has no operation for.
  *
- * Everything else in the API is reachable through the HTTP Request node with the Scoro OAuth2
- * credential.
+ * Every operation can override the credential's company account for the call.
  */
 export class Scoro implements INodeType {
 	description: INodeTypeDescription = {
@@ -62,7 +176,7 @@ export class Scoro implements INodeType {
 		version: 1,
 		subtitle: '={{ $parameter["operation"] + ": " + $parameter["resource"] }}',
 		description:
-			'Reads the connected Scoro user and sends messages to Eli, the Scoro AI agent that can do pretty much anything in your Scoro environment that you could do yourself',
+			'Reads the connected Scoro user, sends messages to Eli, the Scoro AI agent that can do pretty much anything in your Scoro environment that you could do yourself, and calls any other Scoro API v4 endpoint',
 		defaults: {
 			name: 'Scoro',
 		},
@@ -83,6 +197,12 @@ export class Scoro implements INodeType {
 				noDataExpression: true,
 				options: [
 					{
+						name: 'Custom API Call',
+						value: 'customApiCall',
+						description:
+							'Any Scoro API v4 endpoint, with the method, path, query, headers and body you choose',
+					},
+					{
 						name: 'Eli',
 						value: 'eli',
 						description:
@@ -95,6 +215,141 @@ export class Scoro implements INodeType {
 					},
 				],
 				default: 'eli',
+			},
+
+			// ----------------------------------------------------------------------------------
+			// Custom API Call
+			// ----------------------------------------------------------------------------------
+			{
+				displayName: 'Operation',
+				name: 'operation',
+				type: 'options',
+				noDataExpression: true,
+				displayOptions: {
+					show: {
+						resource: ['customApiCall'],
+					},
+				},
+				options: [
+					{
+						name: 'Send Request',
+						value: 'sendRequest',
+						description: 'Send a request to any Scoro API v4 endpoint and return the response',
+						action: 'Send a custom API request',
+					},
+				],
+				default: 'sendRequest',
+			},
+			{
+				displayName: 'Method',
+				name: 'method',
+				type: 'options',
+				required: true,
+				options: HTTP_METHODS.map((method) => ({ name: method, value: method })),
+				default: 'GET',
+				description:
+					'HTTP method of the request. The Scoro API v4 uses GET, POST, PATCH and DELETE.',
+				displayOptions: {
+					show: {
+						resource: ['customApiCall'],
+						operation: ['sendRequest'],
+					},
+				},
+			},
+			{
+				displayName: 'Endpoint',
+				name: 'endpoint',
+				type: 'string',
+				required: true,
+				default: '',
+				placeholder: 'e.g. /projects/123',
+				description:
+					'Path of the endpoint under /api/v4 of your site, as listed in the Scoro API v4 reference (https://api.scoro.com/api/v4/reference). The site comes from the credential.',
+				displayOptions: {
+					show: {
+						resource: ['customApiCall'],
+						operation: ['sendRequest'],
+					},
+				},
+			},
+			nameValueCollection(
+				'Query Parameters',
+				'queryParameters',
+				'parameters',
+				'Parameter',
+				'Add Parameter',
+				'e.g. 50',
+			),
+			nameValueCollection(
+				'Headers',
+				'headers',
+				'parameters',
+				'Header',
+				'Add Header',
+				'e.g. application/json',
+			),
+			{
+				displayName: 'Specify Body',
+				name: 'specifyBody',
+				type: 'options',
+				options: [
+					{
+						name: 'Using Fields Below',
+						value: 'fields',
+					},
+					{
+						name: 'Using JSON',
+						value: 'json',
+					},
+				],
+				default: 'fields',
+				description: 'How the request body is given. It is sent as JSON either way.',
+				displayOptions: {
+					show: {
+						resource: ['customApiCall'],
+						operation: ['sendRequest'],
+						method: METHODS_WITH_BODY,
+					},
+				},
+			},
+			nameValueCollection(
+				'Body Fields',
+				'bodyFields',
+				'parameters',
+				'Field',
+				'Add Field',
+				'e.g. Website redesign',
+				METHODS_WITH_BODY,
+			),
+			{
+				displayName: 'JSON Body',
+				name: 'jsonBody',
+				type: 'json',
+				required: true,
+				default: '{}',
+				description: 'Body of the request as a JSON object or array',
+				displayOptions: {
+					show: {
+						resource: ['customApiCall'],
+						operation: ['sendRequest'],
+						method: METHODS_WITH_BODY,
+						specifyBody: ['json'],
+					},
+				},
+			},
+			{
+				displayName: 'Options',
+				name: 'options',
+				type: 'collection',
+				placeholder: 'Add option',
+				default: {},
+				displayOptions: {
+					show: {
+						resource: ['customApiCall'],
+						operation: ['sendRequest'],
+					},
+				},
+				options: [companyAccountOption],
 			},
 
 			// ----------------------------------------------------------------------------------
@@ -152,6 +407,7 @@ export class Scoro implements INodeType {
 					},
 				},
 				options: [
+					companyAccountOption,
 					{
 						displayName: 'Thread ID',
 						name: 'threadId',
@@ -187,6 +443,20 @@ export class Scoro implements INodeType {
 				],
 				default: 'getMe',
 			},
+			{
+				displayName: 'Options',
+				name: 'options',
+				type: 'collection',
+				placeholder: 'Add option',
+				default: {},
+				displayOptions: {
+					show: {
+						resource: ['user'],
+						operation: ['getMe'],
+					},
+				},
+				options: [companyAccountOption],
+			},
 		],
 	};
 
@@ -196,23 +466,70 @@ export class Scoro implements INodeType {
 		const resource = this.getNodeParameter('resource', 0) as string;
 		const operation = this.getNodeParameter('operation', 0) as string;
 
+		const pairsOf = (name: string, i: number): NameValue[] => {
+			const collection = this.getNodeParameter(name, i, {}) as NameValueCollection;
+			return (collection.parameters ?? []).filter(
+				(pair): pair is NameValue => typeof pair?.name === 'string',
+			);
+		};
+
 		for (let i = 0; i < items.length; i++) {
 			try {
-				let result: IDataObject;
+				const options = this.getNodeParameter('options', i, {}) as IDataObject;
+				const companyAccount =
+					typeof options.companyAccount === 'string' ? options.companyAccount : undefined;
+				let results: IDataObject[];
 
 				if (resource === 'user' && operation === 'getMe') {
-					result = (await scoroApiRequest.call(this, 'GET', '/users/me')) as IDataObject;
+					const user = await scoroApiRequest.call(this, 'GET', '/users/me', undefined, {
+						companyAccount,
+					});
+					results = [user as IDataObject];
 				} else if (resource === 'eli' && operation === 'sendMessage') {
 					const message = this.getNodeParameter('message', i) as string;
-					const options = this.getNodeParameter('options', i, {}) as IDataObject;
 					const threadId = typeof options.threadId === 'string' ? options.threadId.trim() : '';
 					const body: IDataObject = { message };
 					if (threadId) body.threadId = threadId;
 
-					result = (await scoroApiRequest.call(this, 'POST', '/ai/messages', body, {
+					const answer = await scoroApiRequest.call(this, 'POST', '/ai/messages', body, {
+						companyAccount,
 						timeout: ELI_TIMEOUT_MS,
 						errorMessages: ELI_ERROR_MESSAGES,
-					})) as IDataObject;
+					});
+					results = [answer as IDataObject];
+				} else if (resource === 'customApiCall' && operation === 'sendRequest') {
+					const method = this.getNodeParameter('method', i) as IHttpRequestMethods;
+					const endpoint = this.getNodeParameter('endpoint', i) as string;
+					if (!endpoint.trim()) {
+						throw new NodeOperationError(this.getNode(), 'The Endpoint field is empty', {
+							itemIndex: i,
+							description: 'Enter the path of a Scoro API v4 endpoint, for example /projects.',
+						});
+					}
+					const query = buildQueryString(pairsOf('queryParameters', i));
+					const path = `${normalizeEndpoint(endpoint)}${query ? `?${query}` : ''}`;
+
+					const headers: IDataObject = {};
+					for (const pair of pairsOf('headers', i)) {
+						if (pair.name.trim()) headers[pair.name.trim()] = pair.value as IDataObject[string];
+					}
+
+					let body: IDataObject | undefined;
+					if (METHODS_WITH_BODY.includes(method)) {
+						const specifyBody = this.getNodeParameter('specifyBody', i, 'fields') as string;
+						if (specifyBody === 'json') {
+							body = parseJsonBody(this.getNodeParameter('jsonBody', i, '{}'), this, i);
+						} else {
+							body = {};
+							for (const pair of pairsOf('bodyFields', i)) {
+								if (pair.name.trim()) body[pair.name.trim()] = pair.value as IDataObject[string];
+							}
+						}
+					}
+
+					const requestOptions: ScoroRequestOptions = { headers, companyAccount };
+					const response = await scoroApiRequest.call(this, method, path, body, requestOptions);
+					results = toOutputObjects(response);
 				} else {
 					throw new NodeOperationError(
 						this.getNode(),
@@ -221,7 +538,9 @@ export class Scoro implements INodeType {
 					);
 				}
 
-				returnData.push({ json: result, pairedItem: { item: i } });
+				for (const json of results) {
+					returnData.push({ json, pairedItem: { item: i } });
+				}
 			} catch (error) {
 				if (this.continueOnFail()) {
 					returnData.push({
@@ -240,4 +559,26 @@ export class Scoro implements INodeType {
 
 		return [returnData];
 	}
+}
+
+/** The JSON Body field: a string to parse, or already an object when an expression produced one. */
+function parseJsonBody(value: unknown, context: IExecuteFunctions, itemIndex: number): IDataObject {
+	if (value !== null && typeof value === 'object') return value as IDataObject;
+	const text = typeof value === 'string' ? value.trim() : '';
+	if (text === '') return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch (error) {
+		throw new NodeOperationError(context.getNode(), 'The JSON Body is not valid JSON', {
+			itemIndex,
+			description: (error as Error).message,
+		});
+	}
+	if (parsed === null || typeof parsed !== 'object') {
+		throw new NodeOperationError(context.getNode(), 'The JSON Body must be an object or an array', {
+			itemIndex,
+		});
+	}
+	return parsed as IDataObject;
 }
