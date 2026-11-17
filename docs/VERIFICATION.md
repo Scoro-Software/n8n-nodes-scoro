@@ -46,6 +46,12 @@ done by a person; this file keeps the inputs in one place.
   2. MEDIUM: generic codex aliases ("AI", "Agent", "Assistant", "Chat"). Only "Eli" remains.
   3. LOW: optional Thread ID at the top level of the form. Moved into an Options collection.
 
+- **Second review (0.5.0)**: the earlier findings are resolved; one finding remains, addressed in
+  the next release.
+  1. MEDIUM: the codex `node` field was the package name `@scoro/n8n-nodes-scoro`. It must be the
+     fully qualified identifier `<package name>.<node name>`, now `@scoro/n8n-nodes-scoro.scoro`
+     (see [Node codex files](https://docs.n8n.io/integrations/creating-nodes/build/reference/node-codex-files/)).
+
   After publishing the new version, confirm it in the Creator Portal so the review resumes.
 
 ## Before submitting

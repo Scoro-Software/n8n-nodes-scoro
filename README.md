@@ -225,6 +225,8 @@ API v2 is not supported.
 
 ## Version history
 
+- **0.5.1**: the codex file's `node` field is the fully qualified identifier
+  `@scoro/n8n-nodes-scoro.scoro`, as the n8n verification review requires. No functional change.
 - **0.5.0**: the Scoro Get Me and Scoro Call Eli nodes are merged into a single **Scoro** node
   with a User resource (Get Me) and an Eli resource (Send Message), as n8n's verification
   guidelines allow one regular node per package. Thread ID moved into the Options collection. New

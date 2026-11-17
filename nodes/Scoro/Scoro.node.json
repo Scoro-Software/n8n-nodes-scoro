@@ -1,5 +1,5 @@
 {
-	"node": "@scoro/n8n-nodes-scoro",
+	"node": "@scoro/n8n-nodes-scoro.scoro",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
 	"categories": ["Productivity", "Sales", "Finance & Accounting"],
